@@ -1,0 +1,236 @@
+version: '3.7'
+
+networks:
+  redis-cluster-compose:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 182.17.0.0/16
+
+volumes:
+  kafka-volume:
+  zookeeper-volume:
+
+services:
+
+  mysql-8.0.32:
+    image: mysql:8.0.32
+    environment:
+      MYSQL_DATABASE: 'orderDevDb'
+      MYSQL_USER: 'user'
+      MYSQL_PASSWORD: '12345'
+      MYSQL_ROOT_PASSWORD: '12345'
+    ports:
+      - '13306:3306'
+    volumes:
+      - ./my_volume:/var/lib/mysql
+    networks:
+      redis-cluster-compose:
+        ipv4_address: 182.17.0.8
+
+  config-server:
+    image: config-server
+    ports:
+      - "8085:8085"
+    restart: always
+    networks:
+      redis-cluster-compose:
+        ipv4_address: 182.17.0.14
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+      ALLOW_ANONYMOUS_LOGIN: yes
+    volumes:
+      - "zookeeper-volume:/data"
+    ports:
+      - "2181:2181"
+    restart: always
+    networks:
+      redis-cluster-compose:
+        ipv4_address: 182.17.0.15
+
+  kafka:
+    restart: always
+    image: confluentinc/cp-kafka:latest
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    volumes:
+      - "kafka-volume:/data"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ADVERTISED_HOST_NAME: kafka
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    links:
+      - zookeeper
+    networks:
+      redis-cluster-compose:
+        ipv4_address: 182.17.0.16
+
+  redis-node-1:
+    image: redis:latest
+    ports:
+      - "7000:7000"
+    networks:
+      redis-cluster-compose:
+        ipv4_address: 182.17.0.2
+    hostname: redis-node-1
+    volumes:
+      - ./7000:/redis
+    command: redis-server /redis/redis.conf
+
+  redis-node-2:
+    image: redis:latest
+    ports:
+      - "7001:7001"
+    networks:
+      redis-cluster-compose:
+        ipv4_address: 182.17.0.3
+    hostname: redis-node-2
+    volumes:
+      - ./7001:/redis
+    command: redis-server /redis/redis.conf
+
+  redis-node-3:
+    image: redis:latest
+    ports:
+      - "7002:7002"
+    networks:
+      redis-cluster-compose:
+        ipv4_address: 182.17.0.4
+    hostname: redis-node-3
+    volumes:
+      - ./7002:/redis
+    command: redis-server /redis/redis.conf
+
+  redis-node-4:
+    image: redis:latest
+    ports:
+      - "7003:7003"
+    networks:
+      redis-cluster-compose:
+        ipv4_address: 182.17.0.5
+    volumes:
+      - ./7003:/redis
+    command: redis-server /redis/redis.conf
+
+  redis-node-5:
+    image: redis:latest
+    ports:
+      - "7004:7004"
+    networks:
+      redis-cluster-compose:
+        ipv4_address: 182.17.0.6
+    hostname: redis-node-5
+    volumes:
+      - ./7004:/redis
+    command: redis-server /redis/redis.conf
+
+  redis-node-6:
+    image: redis:latest
+    ports:
+      - "7005:7005"
+    networks:
+      redis-cluster-compose:
+        ipv4_address: 182.17.0.7
+    hostname: redis-node-6
+    volumes:
+      - ./7005:/redis
+    command: redis-server /redis/redis.conf
+
+  redis-cluster-creator:
+    image: redis:latest
+    ports:
+      - "6999:6999"
+    networks:
+      - redis-cluster-compose
+    command: redis-cli -p 7000 --cluster create redis-node-1:7000 redis-node-2:7001 redis-node-3:7002 redis-node-4:7003 redis-node-5:7004 redis-node-6:7005 --cluster-replicas 1 --cluster-yes
+    depends_on:
+      - redis-node-1
+      - redis-node-2
+      - redis-node-3
+      - redis-node-4
+      - redis-node-5
+      - redis-node-6
+
+  redis-insight:
+    image: redislabs/redisinsight:latest
+    ports:
+      - "8001:8001"
+    networks:
+      - redis-cluster-compose
+    volumes:
+      - ./redisinsight:/db
+    depends_on:
+      - redis-cluster-creator
+
+  eureka:
+    image: eureka
+    ports:
+      - "8761:8761"
+    networks:
+      redis-cluster-compose:
+        ipv4_address: 182.17.0.10
+
+  api-gateway:
+    image: api-gateway
+    ports:
+      - "9090:9090"
+    depends_on:
+      - eureka
+    restart: always
+    networks:
+      redis-cluster-compose:
+        ipv4_address: 182.17.0.11
+
+  order-service:
+    image: order
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_KAFKA_BOOTSTRAPSERVERS: kafka:29092
+    depends_on:
+      - mysql-8.0.32
+      - config-server
+      - zookeeper
+      - kafka
+      - redis-cluster-creator
+    links:
+      - mysql-8.0.32
+      - config-server
+      - zookeeper
+      - kafka
+      - redis-cluster-creator
+    restart: always
+    networks:
+      redis-cluster-compose:
+        ipv4_address: 182.17.0.12
+
+  payment-service:
+    image: payment
+    ports:
+      - "8081:8081"
+    environment:
+      SPRING_KAFKA_BOOTSTRAPSERVERS: kafka:29092
+    depends_on:
+      - mysql-8.0.32
+      - config-server
+      - zookeeper
+      - kafka
+    links:
+      - mysql-8.0.32
+      - config-server
+      - zookeeper
+      - kafka
+    restart: always
+    networks:
+      redis-cluster-compose:
+        ipv4_address: 182.17.0.13
