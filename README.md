@@ -1,2 +1,2 @@
 # eurekaserver
-hacktoberfest eurekaserver docker jenkins
+hacktoberfest eurekaserver docker jenkins github
