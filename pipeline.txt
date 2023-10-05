@@ -60,4 +60,40 @@ pipeline {
     }
 }
 
+------------------------ remove docker container  ----------------------------------------------------------
+
+pipeline {
+    agent any
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '2'))
+    }
+    environment {
+        DOCKERHUB_CREDENTIALS = credentials('dockerhub')
+    }
+    stages {
+        stage('Login Docker') {
+            steps {
+                echo '::::::::::   Login Docker Start ::::::::'
+                sh 'echo $DOCKERHUB_CREDENTIALS_PSW | docker login -u $DOCKERHUB_CREDENTIALS_USR --password-stdin'
+                echo '::::::::::   Login Docker Complete ::::::::'
+            }
+        }
+        stage('Run Docker') {
+            steps {
+                echo "::::::::::   Remove Docker Container :::::::: ${dockerContainerName}"
+                sh 'docker rm -f $dockerContainerName && echo "container $dockerContainerName removed" || echo "container $dockerContainerName does not exist"'
+                echo '::::::::::   Remove Docker Complete ::::::::'
+            }
+        }
+    }
+    post {
+      always {
+      sh 'docker logout'
+      echo ':::::::::: Docker Hub Logout ::::::::'
+        }
+    }
+}
+
 ----------------------------------------------------------------------------------
+
+
